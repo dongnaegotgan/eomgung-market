@@ -3,3 +3,6 @@ node_modules/
 *.log 
 fix_*.js 
 patch_*.js 
+server.prebak* 
+server.allfix* 
+server.js.cache* 
