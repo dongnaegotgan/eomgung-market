@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>엄궁 경락가 · 실시간 시세판</title>
+  <meta name="description" content="부산광역시 엄궁농산물도매시장 실시간 경락가 조회" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+
+  <!-- 샘플 데이터일 때만 보이는 경고 스트라이프 -->
+  <div class="fake-banner" id="fakeBanner" hidden>
+    <div class="fake-banner__inner">
+      <span class="fake-banner__badge">DEMO</span>
+      <span class="fake-banner__text">
+        <strong>지금 보이는 데이터는 실제 엄궁시장 경매가 아닌 임의 생성된 샘플입니다.</strong>
+        공공데이터포털 API 키가 활성화되면 자동으로 실제 데이터로 전환됩니다.
+      </span>
+    </div>
+  </div>
+
+  <!-- 상단 티커 (최근 낙찰가 흐름) -->
+  <div class="ticker" id="ticker" aria-hidden="true">
+    <div class="ticker__track" id="tickerTrack">
+      <span class="ticker__item muted">데이터 불러오는 중…</span>
+    </div>
+  </div>
+
+  <!-- 헤더 -->
+  <header class="hero">
+    <div class="hero__brand">
+      <span class="hero__mark">嚴</span>
+      <div class="hero__titles">
+        <p class="hero__eyebrow">부산광역시 · 엄궁농산물도매시장</p>
+        <h1 class="hero__title">실시간 <em>경락가</em> 시세판</h1>
+      </div>
+    </div>
+
+    <div class="hero__meta">
+      <div class="meta__block">
+        <span class="meta__label">현재 시각</span>
+        <span class="meta__value mono" id="clock">--:--:--</span>
+      </div>
+      <div class="meta__block">
+        <span class="meta__label">마지막 갱신</span>
+        <span class="meta__value mono" id="lastUpdated">—</span>
+      </div>
+      <div class="meta__block">
+        <span class="meta__label">다음 갱신</span>
+        <span class="meta__value mono" id="nextRefresh">30s</span>
+      </div>
+      <div class="meta__status" id="status" data-state="idle">
+        <span class="status__dot"></span>
+        <span class="status__text">대기</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 필터 표시 칩 -->
+  <div class="filterbar" id="filterbar" hidden>
+    <span class="chip">
+      <span class="chip__key">도매시장</span>
+      <span class="chip__val mono" id="filterMarket">—</span>
+    </span>
+    <span class="chip">
+      <span class="chip__key">도매법인</span>
+      <span class="chip__val mono" id="filterCompany">—</span>
+    </span>
+    <span class="filterbar__hint mono" id="filterHint"></span>
+  </div>
+
+  <!-- 에러 배너 -->
+  <div class="banner" id="errorBanner" hidden>
+    <div class="banner__icon">!</div>
+    <div class="banner__body">
+      <strong class="banner__title">API 호출 실패</strong>
+      <p class="banner__msg" id="errorMsg"></p>
+      <p class="banner__hint" id="errorHint"></p>
+    </div>
+    <button class="banner__close" id="errorClose" aria-label="닫기">×</button>
+  </div>
+
+  <!-- 통계 -->
+  <section class="stats" aria-label="요약 통계">
+    <article class="stat">
+      <span class="stat__label">거래 건수</span>
+      <span class="stat__value" id="statCount">—</span>
+      <span class="stat__unit">건</span>
+    </article>
+    <article class="stat">
+      <span class="stat__label">평균 낙찰가</span>
+      <span class="stat__value" id="statAvg">—</span>
+      <span class="stat__unit">원</span>
+    </article>
+    <article class="stat">
+      <span class="stat__label">총 거래량</span>
+      <span class="stat__value" id="statVolume">—</span>
+      <span class="stat__unit">kg</span>
+    </article>
+    <article class="stat stat--highlight">
+      <span class="stat__label">최고가 품목</span>
+      <span class="stat__value small" id="statTop">—</span>
+      <span class="stat__unit mono" id="statTopPrice">—</span>
+    </article>
+  </section>
+
+  <!-- 컨트롤 -->
+  <section class="controls">
+    <div class="controls__search">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+      </svg>
+      <input
+        type="search"
+        id="searchInput"
+        placeholder="품목 · 품종 · 산지 · 출하자로 검색"
+        autocomplete="off"
+      />
+    </div>
+
+    <div class="controls__right">
+      <div class="controls__view" role="tablist" aria-label="보기 전환">
+        <button class="view-btn is-active" data-view="table" role="tab">원장</button>
+        <button class="view-btn" data-view="summary" role="tab">품목별</button>
+        <button class="view-btn" data-view="chart" role="tab">차트</button>
+      </div>
+      <label class="controls__switch">
+        <input type="checkbox" id="autoRefresh" checked />
+        <span>자동갱신 30초</span>
+      </label>
+      <button class="btn btn--ghost" id="csvBtn" title="현재 필터 결과를 CSV로 저장">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        CSV
+      </button>
+      <button class="btn" id="refreshBtn">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12a9 9 0 0 1-15.5 6.3M3 12A9 9 0 0 1 18.5 5.7"/>
+          <path d="M21 4v5h-5M3 20v-5h5"/>
+        </svg>
+        지금 갱신
+      </button>
+    </div>
+  </section>
+
+  <!-- 데이터 뷰 (원장 / 품목별 / 차트) -->
+  <section class="table-wrap" id="viewTable">
+    <table class="table" id="dataTable">
+      <thead>
+        <tr>
+          <th data-sort="saleTime">시각</th>
+          <th data-sort="productName">품목</th>
+          <th data-sort="kindName">품종</th>
+          <th data-sort="grade">등급</th>
+          <th data-sort="origin">산지</th>
+          <th data-sort="unit">규격</th>
+          <th class="num" data-sort="quantity">수량</th>
+          <th class="num price-col" data-sort="price">경락가 ▾</th>
+          <th data-sort="company">도매법인</th>
+          <th data-sort="shipper">출하자</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr class="empty">
+          <td colspan="10">
+            <div class="empty__inner">
+              <p>데이터를 불러오는 중입니다…</p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="table-wrap" id="viewSummary" hidden>
+    <table class="table table--summary">
+      <thead>
+        <tr>
+          <th>품목</th>
+          <th class="num">건수</th>
+          <th class="num">최저가</th>
+          <th class="num">평균가</th>
+          <th class="num">최고가</th>
+          <th class="num">총 수량</th>
+          <th>주요 산지</th>
+        </tr>
+      </thead>
+      <tbody id="summaryBody"></tbody>
+    </table>
+  </section>
+
+  <section class="chart-wrap" id="viewChart" hidden>
+    <div class="chart-card">
+      <div class="chart-card__head">
+        <h2 class="chart-card__title">품목별 평균 경락가 <span class="mono muted">top 12</span></h2>
+        <p class="chart-card__sub mono">단위: 원</p>
+      </div>
+      <canvas id="priceChart" height="380"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card__head">
+        <h2 class="chart-card__title">품목별 거래량 <span class="mono muted">top 12</span></h2>
+        <p class="chart-card__sub mono">단위: 수량 합계</p>
+      </div>
+      <canvas id="volumeChart" height="380"></canvas>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      자료출처 ·
+      <a href="https://www.data.go.kr/data/15056676/openapi.do" target="_blank" rel="noopener">
+        공공데이터포털 (부산광역시_엄궁농산물도매시장 실시간 경락정보)
+      </a>
+    </p>
+    <p class="foot__note mono" id="footNote">—</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "eomgung-market-auction",
+  "version": "0.1.0",
+  "description": "엄궁농산물도매시장 실시간 경락가 조회 웹페이지",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0",
+    "canvas": "^3.2.3",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "fast-xml-parser": "^4.4.1",
+    "node-cron": "^4.2.1",
+    "puppeteer": "^24.42.0",
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,7 @@
+cd D:\경락가데이터서버\eomgung-market
+copy "_snapshots\20260425_084500\tg_status_bot.js" tg_status_bot.js
+copy "_snapshots\20260425_084500\scheduler.js" scheduler.js
+copy "_snapshots\20260425_084500\server.js" server.js
+pm2 restart gotgan-status
+pm2 restart gotgan-scheduler
+pm2 restart gotgan-server

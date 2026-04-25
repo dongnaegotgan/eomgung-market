@@ -1,0 +1,15 @@
+{
+  "timestamp": "20260424_210503",
+  "date": "2026-04-24 21:05:03",
+  "memo": "v8 적용 전 백업",
+  "saved": [
+    "tg_status_bot.js",
+    "auto_approve_watch.js",
+    "server.js",
+    "scheduler.js",
+    "order_watcher.js",
+    "mini_server.js",
+    "db.js"
+  ],
+  "missing": []
+}

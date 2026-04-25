@@ -1,0 +1,15 @@
+{
+  "timestamp": "20260425_063125",
+  "date": "2026-04-25 06:31:25",
+  "memo": "v20 최종완성 어드민+곳간 정상",
+  "saved": [
+    "tg_status_bot.js",
+    "auto_approve_watch.js",
+    "server.js",
+    "scheduler.js",
+    "order_watcher.js",
+    "mini_server.js",
+    "db.js"
+  ],
+  "missing": []
+}

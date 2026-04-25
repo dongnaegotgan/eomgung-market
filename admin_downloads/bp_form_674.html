@@ -1,0 +1,210 @@
+<script>
+	$(document).ready(function() {
+		sltBizgrp();
+		sltBizAct();
+	});
+
+	function sltBizgrp() {
+		var val = $(":input:radio[name=bizgroups]:checked").val();
+		$(".bizgrp1, .bizgrp2").hide();
+		if (val == '1') {
+			$(".bizgrp1").show();
+		} else {
+			$(".bizgrp2").show();
+		}
+	}
+
+	function sltBizAct() {
+		var val = $(":input:radio[name=bzaccountstate]:checked").val();
+		$(".bizgrp3").hide();
+		if (val == '1') {
+			$(".bizgrp3").show();
+		}
+	}
+</script>
+<style>
+	.bizgrp1,
+	.bizgrp2,
+	.bizgrp3,
+	#kakaoHp {
+		display: none
+	}
+
+	#layoutCnt {
+		color: red;
+		font-weight: bold
+	}
+</style>
+<form id="bizfrm">
+	<input type="hidden" name='idx' value='674'>
+	<script language='javascript' src="./bizpartner/js/bizpartner.js?122"></script>
+		<input type="hidden" name="biznum" value="1111111111">
+	<input type="hidden" name="tmpidx" value="">
+	<fieldset>
+		<span style='display:none'>
+			<label for="bizcmpname">거래처구분</label>
+			<div>
+				<label><input type="radio" name='bizgroups' onclick='sltBizgrp()' value="1" >매입(공급)거래처</label>
+				<label><input type="radio"  name='bizgroups' onclick='sltBizgrp()' value="2" checked>매출(납품)거래처</label>
+			</div>
+		</span>
+
+					<label for="bizcmpname">거래처명</label>
+			<div>
+				더강함 (예치금 : <a href="?mod=dmoney&actpage=dmoney.list.detail&bzidx=674" target="_blank">￦0</a> / 적립금 : <a href="?mod=account&actpage=emoney.list.detail&bzidx=674" target="_blank">￦0</a>)
+			</div>
+
+							<label for="bizcmpname">마이너스 예치금 사용 여부</label>
+				<div>
+					<label><input type="checkbox" name="use_minus_deposit" id="use_minus_deposit" value="1" > 마이너스 예치금 처리가 가능한 업체입니다.</label>
+				</div>
+					
+		<span class='bizgrp2'>
+			
+						<label for="bizstate" >공급가그룹</label>
+			<div >
+				<label><input type="radio" name='bizgrp' value="0" >그룹미지정</label>
+										<label><input type="radio" name='bizgrp' value="1" checked>셀러(기본공급가 대비 <span class='rate'>100</span>%)</label>
+										<label><input type="radio" name='bizgrp' value="2" >벤더사(기본공급가 대비 <span class='rate'>95</span>%)</label>
+										<label><input type="radio" name='bizgrp' value="3" >박스(기본공급가 대비 <span class='rate'>100</span>%)</label>
+							</div>
+		</span>
+		<label for="bizstate">관리그룹</label>
+		<div>
+			<label><input type="radio" name='bizcate' value="0" checked>그룹미지정</label>
+					</div>
+														<input type="hidden" name="biznumtype" value="1">
+							<span class='biznumtype_1'>
+			<label for="bizcmpname">사업자번호</label>
+			<input type='text' name='biznum' id='biznum' value='6459002156' itemname='사업자번호' style='width:200px' class='chkFld text ui-widget-content ui-corner-all' onfocus='this.select();' maxlength='15'>
+		</span>
+		<label for="bizcmpname">거래처코드</label>
+		<input type='text' name='bizerpcode' id='bizerpcode' value='' itemname='거래처코드' style='width:200px' class=' text ui-widget-content ui-corner-all' onfocus='this.select();'>
+					<span class='biznumtype_1'>
+				<label for="bizcmpname">사업자등록증</label>
+				<div>
+											<a href="https://cdn.yourlove.co.kr/dongnaegotgan/img/etc//1776952564_35289.jpg" target="_blank"><u>1776952564_35289.jpg</u></a>
+						<button type='button' class='list' onclick='$(".biz_attachfile").toggle()'>변경하기</button>
+						<span class="filebox biz_attachfile" style='display:none'>
+							<input class="upload-name" value="파일선택(1MB이하)" disabled="disabled">
+							<label for="attachfile">파일찾기</label>
+							<input type='file' name='attachfile' id='attachfile' class='imgInp upload-hidden' itemname='사업자등록증' accept='image/*' onchange='readURL(this)' style='width:300px'>
+						</span>
+									</div>
+			</span>
+				<label for="bizcmpname">거래처명</label>
+		<input type="text" name='bizcmpname' itemname='거래처명' id='bizcmpname' value="더강함" class="chkFld text ui-widget-content ui-corner-all">
+		</span>
+		<span class='biznumtype_1'>
+			<label for="bizcmpname">업태/종목</label>
+			<input type='text' name='bizcmpcdt' itemname='업태' value='도매 및 소매업' class="text ui-widget-content ui-corner-all" style='width:80px;float:left' onfocus='this.select();'>
+			<div style='width:5px;float:left'>/</div>
+			<input type='text' name='bizcmpitem' itemname='종목' value='전자상거래 소매업' class="text ui-widget-content ui-corner-all" style='width:80px;float:left' onfocus='this.select();'>
+		</span>
+		<label for="bizname" style='clear:both'>대표자</label>
+		<input type="text" name='bizname' id='bizname' itemname='대표자' value="김동현" class="chkFld text ui-widget-content ui-corner-all">
+		<label for="biztel">연락처(전화)</label>
+		<input type='text' name='biztel' id='biztel' value="" class="phone text ui-widget-content ui-corner-all" onfocus='autoHypen(this);' onkeyup='autoHypen(this)' maxlength="13" placeholder="___-___-____">
+		<label for="bizhp">연락처(휴대폰)</label>
+		<input type='text' name='bizhp' id='bizhp' value="010-6490-4522" class="phone text ui-widget-content ui-corner-all" onfocus='autoHypen(this);' onkeyup='autoHypen(this)' maxlength="13" placeholder="___-___-____">
+		<label for="bizfax">연락처(팩스)</label>
+		<input type='text' name='bizfax' id='bizfax' value="" class="phone text ui-widget-content ui-corner-all" onfocus='autoHypen(this);' onkeyup='autoHypen(this)' maxlength="13" placeholder="___-___-____">
+		
+		<label for="bizmail">이메일(주문서수신이메일)</label>
+		<input type='text' name='bizmail' id='bizmail' value="vaddong@naver.com" class=" text ui-widget-content ui-corner-all">
+					<label for="bizmail">이메일(거래명세표 수신이메일)</label>
+			<input type='text' name='bizmail2' id='bizmail2' value="vaddong@naver.com" class="email text ui-widget-content ui-corner-all">
+			<label for="bizmail">이메일(세금계산서수신이메일)</label>
+			<input type='text' name='bizmail3' id='bizmail3' value="vaddong@naver.com" class="email text ui-widget-content ui-corner-all">
+
+						<label for="bizmail">배송비 과세여부</label>
+			<div>
+				<label><input type="radio" name='dlv_taxation' value="1" checked>과세</label>
+				<label><input type="radio" name='dlv_taxation' value="0" >비과세</label>
+			</div>
+							<label for="bizzip">우편번호</label>
+		<div id="bizzipwrap" style="display:none;position:absolute;left:50%;background:#fff;border:5px solid;width:500px;height:300px;margin:0 0 0 -250px;">
+			<img src="//t1.kakaocdn.net/localimg/localimages/07/postcode/320/close.png" id="btnFoldWrap" style="cursor:pointer;position:absolute;right:0px;top:-1px;z-index:1" onclick="closeDaumPostcode()" alt="접기 버튼">
+		</div>
+		<input type="text" name='bizzip' id='bizzip' style='width:120px;' onclick='openDaumPostcode()' class="inline text ui-widget-content ui-corner-all" readonly value="53248"> <button type='button' style='margin-bottom:12px;height:35px' class='list' onclick='openDaumPostcode()'>우편번호검색</button>
+		<label for="bizcmpname">주소</label>
+		<input type="text" name='bizaddr1' id='bizaddr1' onclick='openDaumPostcode()' value="경남 거제시 중곡로2길 29 (고현동, 고려2차아파트)" class="inline text ui-widget-content ui-corner-all" readonly>
+		<label for="bizcmpname">상세주소</label>
+		<input type="text" name='bizaddr2' id='bizaddr2' value="1동2층6호" class="inline text ui-widget-content ui-corner-all">
+
+		<label for="bizcmpname">홈페이지</label>
+		<input type="text" name='bizhomepage' id='bizhomepage' value="" class="inline text ui-widget-content ui-corner-all">
+
+		<input type="hidden" name="pcoststate" value="KRW">
+		<!--span class='bizgrp1'>
+				<label for="pcoststate">결제통화</label>
+				<select name='pcoststate' id="pcoststate" class="pcoststate"  itemname="결제통화" class=" ui-corner-all" style="width:200px;margin-bottom:12px;">
+<option value=''>=선택=</option>
+<option value='KRW' selected>원화(KRW)</option>
+<option value='USD' >달러(USD)</option>
+<option value='CNY' >위안화(CNY)</option>
+<option value='JPY' >엔화(JPY)</option>
+</select>
+		</span-->
+		<label for="bizmemo">MEMO</label>
+		<textarea name='bizmemo' id='bizmemo' style='width:95%;height:60px;margin-bottom:12px;' class="text ui-corner-all"></textarea>
+
+		<span class='bizgrp1'>
+			<label for="bizstate">발주엑셀 레이아웃 설정</label>
+			<div>
+				<button onclick='addOrderBookExcelLayout("674","")' type='button' class='list'>레이아웃 설정하기</button>
+			</div>
+		</span>
+						<span class='bizgrp2'>
+			<label for="bizstate">업로드 주문엑셀 LAYOUT</label>
+			<div>
+								<span id='layoutCnt'>0</span> 개의 레이아웃이 등록되어있습니다.
+				<button onclick='addExcelLayout("674","")' type='button' class='list'>레이아웃 등록하기</button>
+			</div>
+		</span>
+		<span>
+			<label for="bzaccountstate">거래처계정 사용여부</label>
+			<div>
+				<label><input type="radio" name='bzaccountstate' id='bzaccountstate' value='1' checked onclick='sltBizAct()'>사용함</label>
+				<label><input type="radio" name='bzaccountstate' id='bzaccountstate' value='0'  onclick='sltBizAct()'>사용하지않음</label>
+			</div>
+		</span>
+		<span class='bizgrp3'>
+							<label for="bizid">거래처 아이디 (거래처 발주관리 페이지 : <a href='https://dongnaegotgan.adminplus.co.kr/partner' target='_blank'>https://dongnaegotgan.adminplus.co.kr/partner</a>)</label>
+						<input type='text' name='bizid' id='bizid' itemname='거래처로그인아이디' value="dldnswo79" class="text ui-widget-content ui-corner-all">
+			<label for="bizpwd">거래처 비밀번호</label>
+			<input type='text' name='bizpwd' id='bizpwd' itemname='거래처로그인비밀번호' value="ehdgus8129#" class="text ui-widget-content ui-corner-all">
+		</span>
+		<label for="bizstate">사용여부</label>
+		<div>
+			<label><input type="radio" name='bizstate' id='bizstate' value='1' >사용함</label>
+			<label><input type="radio" name='bizstate' id='bizstate' value='0' >사용하지않음</label>
+							<label><input type="radio" name='bizstate' id='bizstate' value='2' checked>미인증</label>
+					</div>
+			</fieldset>
+</form>
+<script>
+	$(function() {
+		var fileTarget = $('.filebox .upload-hidden');
+		fileTarget.on('change', function(i) {
+			if (window.FileReader) {
+				var filename = $(this)[0].files[0].name;
+			} else {
+				var filename = $(this).val().split('/').pop().split('\\').pop();
+			}
+			$(this).siblings('.upload-name').val(filename);
+		});
+		$("input:radio[name=order_recept_method]").click(function() {
+			ChkReceptMethod();
+		});
+		ChkReceptMethod();
+	});
+
+	function ChkReceptMethod() {
+		var val = $(":input:radio[name=order_recept_method]:checked").val();
+		$("#kakaoHp").hide();
+		if (val == "kakao" || val == "all") {
+			$("#kakaoHp").show();
+		}
+	}
+</script>

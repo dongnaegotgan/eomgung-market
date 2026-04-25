@@ -1,0 +1,137 @@
+# tg_status_bot.js 단가변경 기능 패치 요약
+## 작업일: 2026-04-25
+
+---
+
+## 수정된 문제 3가지
+
+### 문제 1: text 첫 단어만 추출 (핵심 버그)
+**파일**: `tg_status_bot.js`  
+**패치 파일**: `patch_text_fix.js`
+
+```js
+// 수정 전
+var text=msg2.text.trim().split(' ')[0], chatId=String(msg2.chat.id);
+log('recv: "'+text+'"');
+if(CMDS.indexOf(text)>=0||/변경|수정|바꾸|단가변경/.test(text)) handleCommand(text,chatId);
+
+// 수정 후
+var rawText=msg2.text.trim(), text=rawText.split(' ')[0], chatId=String(msg2.chat.id);
+log('recv: "'+rawText+'"');
+if(CMDS.indexOf(text)>=0) handleCommand(text,chatId);
+else if(/변경|수정|바꾸|단가변경/.test(rawText)) handleCommand(rawText,chatId);
+```
+
+---
+
+### 문제 2: handleCommand 내 단가변경 코드 없음
+**파일**: `tg_status_bot.js`  
+**패치 파일**: `patch_status_price3.js`
+
+```js
+// function handleCommand 첫줄에 추가
+//_price_patch3_
+var _hc=/변경|수정|바꾸|단가변경/.test(cmd);
+if(_hc){
+  var _wm=cmd.match(/(\d[\d,]+)\uC6D0/);
+  var _np=_wm?parseInt(_wm[1].replace(/,/g,'')):0;
+  var _pn=cmd.replace(/(\d[\d,]+)원.*/,'').replace(/으로|로|변경|수정|바꾸|단가|해줘|주세요/g,'').trim();
+  if(_np>=100&&_np<10000000&&_pn.length>=2){
+    var _ap=require('./auto_price_single');
+    tgSend('\u23F3 \uCC98\uB9AC\uC911...', chatId);
+    _ap.run(_pn,_np).then(function(r){
+      if(r.success){
+        tgSend('\u2705 \uB2E8\uAC00 \uBCC0\uACBD \uC644\uB8CC\n'+_pn+'\n'+_np.toLocaleString()+'\uC6D0',chatId);
+      } else if(r.needsSelection){
+        var msg='\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5EC\uB7EC\uAC1C\uC785\uB2C8\uB2E4:\n';
+        r.items.forEach(function(it,i){msg+=(i+1)+'. '+it.name+'\n';});
+        tgSend(msg,chatId);
+      } else {
+        tgSend('\u274C \uBCC0\uACBD \uC2E4\uD328: '+(r.message||''), chatId);
+      }
+    }).catch(function(e){tgSend('\u274C \uC5D0\uB7EC: '+e.message,chatId);});
+    return;
+  }
+}
+```
+
+---
+
+### 문제 3: CMDS 필터 우회
+**파일**: `tg_status_bot.js`  
+**패치 파일**: `patch_cmds_fix.js`  
+(patch_text_fix.js로 통합되어 최종 해결)
+
+---
+
+## 적용 순서 (최종 상태)
+
+1. `patch_status_price3.js` → handleCommand에 단가변경 로직 삽입
+2. `patch_cmds_fix.js` → CMDS 필터에 변경 키워드 추가
+3. `patch_text_fix.js` → rawText 분리 + handleCommand 라우팅 수정 **(최종 핵심 패치)**
+
+---
+
+## 백업 파일 목록 (서버 내 존재)
+
+| 파일명 | 시점 |
+|--------|------|
+| `tg_status_bot.js.bak_price_1777082998418.js` | patch3 적용 전 원본 |
+| `tg_status_bot.js.bak_p3_1777083327265.js` | patch3 적용 후 |
+| `tg_status_bot.js.bak_cmds_1777083811961.js` | cmds_fix 적용 후 |
+| `tg_status_bot.js.bak_tf_1777084297570.js` | text_fix 적용 전 |
+
+복구 필요시: `copy tg_status_bot.js.bak_price_1777082998418.js tg_status_bot.js`
+
+---
+
+## 동작 확인 (2026-04-25 11:37)
+
+```
+recv: "새벽경매 단호박 1알 2700원 변경"
+💱 단가 즉시 변경: 새벽경매 단호박 1알 → 2,700원
+✅ 업로드 완료: 새벽경매 단호박 1알(배송무게 500g 적용) → 2,700원
+```
+
+---
+
+## 주의사항
+
+- **gotgan-server(id:6)가 online이면 메시지 소비 경합 발생**
+- 단가변경 명령은 gotgan-status 전용으로 처리됨
+- 향후 gotgan-server의 TG polling을 제거하거나 단가변경 메시지를 무시하도록 수정 권장
+
+---
+
+## 텔레그램 사용법
+
+```
+새벽경매 단호박 1알 2700원 변경
+단호박 2600원 변경
+두릅 200g 7500원 변경
+```
+
+---
+
+## 나중에 재적용할 때 명령어
+
+### 패치 적용 (순서대로)
+```cmd
+cd D:\경락가데이터서버\eomgung-market
+node patch_status_price3.js
+node patch_cmds_fix.js
+node patch_text_fix.js
+node -c tg_status_bot.js
+pm2 restart gotgan-status
+```
+
+### 원본 복구 (문제 생기면)
+```cmd
+copy tg_status_bot.js.bak_price_1777082998418.js tg_status_bot.js
+pm2 restart gotgan-status
+```
+
+### 동작 확인
+```cmd
+pm2 logs gotgan-status --lines 10 --nostream
+```
