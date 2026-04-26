@@ -346,113 +346,6 @@ app.listen(PORT, () => {
   scheduleAutoRefresh();
 });
 
-// ── 카카오톡 산딸기 알림 ──────────────────────────────────────────────
-const KAKAO_ACCESS_TOKEN  = (process.env.KAKAO_ACCESS_TOKEN  || '').trim();
-const KAKAO_REFRESH_TOKEN = (process.env.KAKAO_REFRESH_TOKEN || '').trim();
-const KAKAO_APP_KEY       = (process.env.KAKAO_APP_KEY       || '').trim();
-const KAKAO_CLIENT_SECRET = (process.env.KAKAO_CLIENT_SECRET || '').trim();
-
-async function refreshKakaoToken() {
-  if (!KAKAO_REFRESH_TOKEN) return null;
-  try {
-    const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: KAKAO_APP_KEY,
-      refresh_token: KAKAO_REFRESH_TOKEN,
-      client_secret: KAKAO_CLIENT_SECRET,
-    });
-    const res = await fetch('https://kauth.kakao.com/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    const data = await res.json();
-    if (data.access_token) { console.log('✅ 카카오 토큰 갱신'); return data.access_token; }
-  } catch (e) { console.error('토큰 갱신 실패:', e.message); }
-  return null;
-}
-
-async function sendKakaoMessage(text, token) {
-  try {
-    const body = new URLSearchParams({
-      template_object: JSON.stringify({
-        object_type: 'text', text,
-        link: { web_url: '', mobile_web_url: '' },
-      }),
-    });
-    const res = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
-    const data = await res.json();
-    return data.result_code === 0;
-  } catch (e) { console.error('메시지 발송 실패:', e.message); return false; }
-}
-
-async function checkSanddalgiAndNotify() {
-  console.log('\n🍓 [산딸기 알림] 오전 6시 조회 시작...');
-  const token = await refreshKakaoToken() || KAKAO_ACCESS_TOKEN;
-  if (!token) { console.log('❌ 카카오 토큰 없음'); return; }
-
-  const date = todayYmd();
-  try {
-    const params = new URLSearchParams({
-      serviceKey: SERVICE_KEY, pageNo: '1', numOfRows: '100', returnType: 'json',
-      'cond[trd_clcln_ymd::EQ]': date,
-      'cond[whsl_mrkt_cd::EQ]': '210001',
-      'cond[corp_cd::EQ]': '21000101',
-      'cond[corp_gds_item_nm::LIKE]': '딸기',
-    });
-    const res = await fetch(`http://apis.data.go.kr/B552845/katRealTime2/trades2?${params}`);
-    const body2 = await res.json();
-    const items = body2?.response?.body?.items?.item || [];
-    const list = Array.isArray(items) ? items : [items];
-    const sanddalgi = list.filter(it => it.corp_gds_vrty_nm?.includes('산딸기') && Number(it.qty) >= 10);
-
-    if (sanddalgi.length === 0) {
-      const ok = await sendKakaoMessage(`📭 산딸기 경락 없음\n\n날짜: ${date}\n오늘은 산딸기 경매가 없었습니다.`, token);
-      console.log(ok ? '✅ 없음 알림 발송' : '❌ 발송 실패'); return;
-    }
-
-    const totalQty = sanddalgi.reduce((s, it) => s + Number(it.qty), 0);
-    const wAvg = Math.round(sanddalgi.reduce((s, it) => s + Number(it.qty) * Number(it.scsbd_prc), 0) / totalQty);
-    const minP = Math.min(...sanddalgi.map(it => Number(it.scsbd_prc)));
-    const maxP = Math.max(...sanddalgi.map(it => Number(it.scsbd_prc)));
-    const sp500 = Math.round((wAvg / 2) * 1.3);
-    const sp1kg = Math.round(wAvg * 1.3);
-    const times = sanddalgi.map(it => it.scsbd_dt?.slice(11,16)).filter(Boolean).sort();
-
-    const msg =
-      `🍓 산딸기 경락 알림 (${date})\n\n` +
-      `경락 시간: ${times[0]} ~ ${times[times.length-1]}\n` +
-      `거래 건수: ${sanddalgi.length}건 / 총 ${totalQty}개\n` +
-      `최저가: ${minP.toLocaleString()}원/kg\n` +
-      `최고가: ${maxP.toLocaleString()}원/kg\n` +
-      `수량평균: ${wAvg.toLocaleString()}원/kg\n\n` +
-      `📦 공급가 (+30% 마진)\n` +
-      `500g: ${sp500.toLocaleString()}원\n` +
-      `1kg:  ${sp1kg.toLocaleString()}원`;
-
-    const ok = await sendKakaoMessage(msg, token);
-    console.log(msg);
-    console.log(ok ? '✅ 카카오톡 발송 완료' : '❌ 발송 실패');
-  } catch (e) { console.error('산딸기 조회 오류:', e.message); }
-}
-
-function scheduleAlert() {
-  const now = new Date(Date.now() + 9 * 3600 * 1000);
-  const next = new Date(now);
-  next.setUTCHours(21, 0, 0, 0); // UTC 21:00 = KST 06:00
-  if (next <= now) next.setUTCDate(next.getUTCDate() + 1);
-  const ms = next - now;
-  const hh = Math.floor(ms / 3600000), mm = Math.floor((ms % 3600000) / 60000);
-  console.log(`\n⏰ 산딸기 알림: ${hh}시간 ${mm}분 후 첫 실행 (매일 오전 6시 KST)`);
-  setTimeout(() => { checkSanddalgiAndNotify(); setInterval(checkSanddalgiAndNotify, 86400000); }, ms);
-}
-
-if (KAKAO_ACCESS_TOKEN || KAKAO_REFRESH_TOKEN) scheduleAlert();
-
 // ── 텔레그램 봇 ────────────────────────────────────────────────────────
 const TG_TOKEN   = (process.env.TG_TOKEN   || '').trim();
 const TG_CHAT_ID = (process.env.TG_CHAT_ID || '').trim();
@@ -803,12 +696,12 @@ async function handleCommand(text, chatId) {
   if (cmd === '추적목록' || cmd === '지정목록') {
     const list = loadTracked();
     const listStr = list.length ? list.map((v,i)=>(i+1)+'. '+v).join('\n') : '없음';
-    return '🎯 지정 품목 목록 (매일 06:30 카카오톡)\n\n' + listStr + '\n\n추가: /추적추가 품목명\n삭제: /추적삭제 품목명';
+    return '🎯 지정 품목 목록 (매일 06:30 텔레그램)\n\n' + listStr + '\n\n추가: /추적추가 품목명\n삭제: /추적삭제 품목명';
   }
   const addMatch = raw.match(new RegExp('^[/]?(추적추가|지정추가)\\s+(.+)'));
   if (addMatch) {
     const item = addMatch[2].trim();
-    return addTracked(item) ? '✅ '+item+' 추가됨\n매일 06:30 카카오톡으로 받습니다' : '⚠️ '+item+' 이미 등록됨';
+    return addTracked(item) ? '✅ '+item+' 추가됨\n매일 06:30 텔레그램으로 받습니다' : '⚠️ '+item+' 이미 등록됨';
   }
   const delMatch = raw.match(new RegExp('^[/]?(추적삭제|지정삭제)\\s+(.+)'));
   if (delMatch) {
@@ -851,10 +744,16 @@ async function pollTelegram() {
       lastUpdateId = update.update_id;
       const msg = update.message;
       if (!msg?.text) continue;
-      // ★ 시세봇 필터: 슬래시 명령어 아니고 '시세' 미포함이면 무시
-      // 단가변경 메시지도 처리 (server.js handleCommand에 이미 로직 있음)
-      const _svPriceCmd = /변경|수정|바꿔|단가변경/.test(msg.text);
-      if (!msg.text.startsWith('/') && !msg.text.includes('시세') && !_svPriceCmd) continue;
+      // ★ 시세봇 화이트리스트 v2: 시세봇이 실제 처리하는 명령만 통과 (status봇 명령 차단)
+      const text = msg.text;
+      const isPriceQuery  = /시세|시황/.test(text);
+      const isWeeklyQuery = /일주일|7일|주간|weekly/.test(text);
+      const isCategoryCmd = /^\/(과일|채소|과채|버섯)류?(\s|$)/.test(text);
+      const isTrackCmd    = /^\/(추적|지정)(목록|추가|삭제)(\s|$)/.test(text);
+      const isHelpCmd     = /^\/(도움말|help|start)(\s|$)/.test(text);
+      // ⚠️ 단가변경 — status봇과 시세봇 이중처리 잠재 버그. 내일 정리 예정. 일단 통과 유지.
+      const _svPriceCmd   = /변경|수정|바꿔|단가변경/.test(text);
+      if (!isPriceQuery && !isWeeklyQuery && !isCategoryCmd && !isTrackCmd && !isHelpCmd && !_svPriceCmd) continue;
 
       // 서버 시작 이전 메시지는 무시 (재시작 시 중복 처리 방지)
       if (msg.date < SERVER_START_TIME) {
