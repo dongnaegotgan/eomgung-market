@@ -729,14 +729,23 @@ async function handleCommand(text, chatId) {
 let lastUpdateId = 0;
 const SERVER_START_TIME = Math.floor(Date.now() / 1000); // 서버 시작 Unix timestamp
 
+// _server_polling_robust_v1_ - fetch lockup 방지 (AbortController 30s + isPolling guard)
+let _isPolling = false;
 async function pollTelegram() {
   if (!TG_TOKEN) return;
+  if (_isPolling) return;
+  _isPolling = true;
+  let _abortCtrl = null;
+  let _abortTimer = null;
   try {
     const params = new (require('url').URLSearchParams)({
       offset: String(lastUpdateId + 1),
       timeout: '25',
     });
-    const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getUpdates?${params}`);
+    _abortCtrl = new AbortController();
+    _abortTimer = setTimeout(() => { try { _abortCtrl.abort(); } catch (_) {} }, 30000);
+    const res = await fetch(`https://api.telegram.org/bot${TG_TOKEN}/getUpdates?${params}`, { signal: _abortCtrl.signal });
+    clearTimeout(_abortTimer); _abortTimer = null;
     const data = await res.json();
     if (!data.ok || !data.result.length) return;
 
@@ -744,18 +753,16 @@ async function pollTelegram() {
       lastUpdateId = update.update_id;
       const msg = update.message;
       if (!msg?.text) continue;
-      // ★ 시세봇 화이트리스트 v2: 시세봇이 실제 처리하는 명령만 통과 (status봇 명령 차단)
+      // 시세봇 화이트리스트 v2
       const text = msg.text;
       const isPriceQuery  = /시세|시황/.test(text);
       const isWeeklyQuery = /일주일|7일|주간|weekly/.test(text);
       const isCategoryCmd = /^\/(과일|채소|과채|버섯)류?(\s|$)/.test(text);
       const isTrackCmd    = /^\/(추적|지정)(목록|추가|삭제)(\s|$)/.test(text);
       const isHelpCmd     = /^\/(도움말|help|start)(\s|$)/.test(text);
-      // ⚠️ 단가변경 — status봇과 시세봇 이중처리 잠재 버그. 내일 정리 예정. 일단 통과 유지.
       const _svPriceCmd   = /변경|수정|바꿔|단가변경/.test(text);
       if (!isPriceQuery && !isWeeklyQuery && !isCategoryCmd && !isTrackCmd && !isHelpCmd && !_svPriceCmd) continue;
 
-      // 서버 시작 이전 메시지는 무시 (재시작 시 중복 처리 방지)
       if (msg.date < SERVER_START_TIME) {
         console.log(`⏭ 과거 메시지 스킵: [${msg.from?.first_name}] ${msg.text}`);
         continue;
@@ -768,7 +775,12 @@ async function pollTelegram() {
         await sendTelegramTo(chatId, reply);
       }
     }
-  } catch(e) { /* 무시 */ }
+  } catch(e) {
+    // timeout/abort/network 모두 무시 — 다음 cycle 재시도
+  } finally {
+    if (_abortTimer) clearTimeout(_abortTimer);
+    _isPolling = false;
+  }
 }
 
 async function sendTelegramTo(chatId, text) {
@@ -778,13 +790,15 @@ async function sendTelegramTo(chatId, text) {
       hostname: 'api.telegram.org',
       path: `/bot${TG_TOKEN}/sendMessage`,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      timeout: 15000 // _server_polling_robust_v1_ - hang 방지
     }, (res) => {
       let data = '';
       res.on('data', d => data += d);
       res.on('end', () => resolve(true));
     });
     req.on('error', () => resolve(false));
+    req.on('timeout', () => { try { req.destroy(); } catch (_) {} resolve(false); });
     req.write(body);
     req.end();
   });

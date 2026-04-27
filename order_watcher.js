@@ -11,7 +11,8 @@ const PENDING_DIR = path.join(ROOT, '_pending');
 const TIMEOUT_DIR = path.join(ROOT, '_timeout');
 const PROCESSED_ORDERS_FILE = path.join(ROOT, '_processed_orders.txt');
 
-const TG_TOKEN = process.env.TG_TOKEN || '8796752509:AAFX54QxpY0SCXxAwpOXqqxVrKEvlZhSNKc';
+// _orders_to_status_bot_v1_ - 신규주문 알림 → @gotgan_status_bot 발송
+const TG_TOKEN = process.env.TG_STATUS_TOKEN || process.env.TG_TOKEN || '8796752509:AAFX54QxpY0SCXxAwpOXqqxVrKEvlZhSNKc';
 const TG_CHAT = process.env.TG_CHAT || '6097520392';
 const tg = makeTg(TG_TOKEN, TG_CHAT);
 

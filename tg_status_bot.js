@@ -2,8 +2,10 @@
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const https     = require('https');
 const puppeteer = require('puppeteer');
+const _approvalHandler = require('./lib/approvalHandler')(tgSend);
 
-var TG_TOKEN = process.env.TG_TOKEN || '8796752509:AAFX54QxpY0SCXxAwpOXqqxVrKEvlZhSNKc';
+// _status_token_split_v1_ - status봇 전용 토큰 분리 (race 영구 해결)
+var TG_TOKEN = process.env.TG_STATUS_TOKEN || '8750135694:AAGTSw-wax01P3t5Dl12g_E7t5mS9RzuC0Q';
 var TG_CHAT  = process.env.TG_CHAT  || '6097520392';
 var ADMIN_URL  = 'https://dongnaegotgan.adminplus.co.kr/admin/';
 var ADMIN_LOGIN= 'https://dongnaegotgan.adminplus.co.kr/admin/login.html';
@@ -17,23 +19,51 @@ var FG_PW    = process.env.FG_PW || 'rhtrks12!@';
 function log(m){ console.log('[' + new Date().toLocaleTimeString('ko-KR') + '] ' + m); }
 function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
 
-function tgPost(p, b){
+// HTTPS Keep-Alive Agent (텔레그램 API 연결 재사용 + 핸드셰이크 비용 제거)
+var tgAgent = new https.Agent({keepAlive:true, maxSockets:5, keepAliveMsecs:30000});
+
+function tgPostOnce(p, b){
   return new Promise(function(res,rej){
     var buf=Buffer.from(JSON.stringify(b));
     var req=https.request({hostname:'api.telegram.org',path:'/bot'+TG_TOKEN+p,method:'POST',
+      agent:tgAgent,timeout:10000,
       headers:{'Content-Type':'application/json','Content-Length':buf.length}},
       function(r){var d='';r.on('data',function(c){d+=c;});r.on('end',function(){try{res(JSON.parse(d));}catch(e){res({});}});});
-    req.on('error',rej);req.write(buf);req.end();
+    req.on('error',rej);
+    req.on('timeout',function(){req.destroy(Object.assign(new Error('socket timeout'),{code:'ESOCKETTIMEDOUT'}));});
+    req.write(buf);req.end();
   });
+}
+
+// 재시도: ETIMEDOUT/ENOTFOUND/EAI_AGAIN만 (요청이 도달 안 한 네트워크 에러 → 멱등성 안전)
+// ECONNRESET/socket timeout은 데이터 전송 후 드롭 가능성 있어 재시도 안 함 (메시지 중복 방지)
+function tgPost(p, b){
+  var attempts=0, maxAttempts=3;
+  function attempt(){
+    attempts++;
+    return tgPostOnce(p,b).catch(function(e){
+      var code=e.code||'';
+      var retryable=code==='ETIMEDOUT'||code==='ENOTFOUND'||code==='EAI_AGAIN';
+      if(retryable && attempts<maxAttempts){
+        log('tgPost retry '+attempts+'/'+(maxAttempts-1)+' ('+code+')');
+        return new Promise(function(r){setTimeout(r,attempts*500);}).then(attempt);
+      }
+      throw e;
+    });
+  }
+  return attempt();
 }
 function tgSend(msg,chatId){ return tgPost('/sendMessage',{chat_id:chatId||TG_CHAT,text:msg,parse_mode:'HTML'}).catch(function(e){log('tgSend:'+e.message);}); }
 function tgSendId(msg,chatId){ return tgPost('/sendMessage',{chat_id:chatId||TG_CHAT,text:msg,parse_mode:'HTML'}).then(function(r){return r.result&&r.result.message_id?r.result.message_id:null;}).catch(function(){return null;}); }
 function tgEdit(chatId,mid,text){ return tgPost('/editMessageText',{chat_id:chatId,message_id:mid,text:text,parse_mode:'HTML'}).catch(function(){}); }
 function tgGetUpdates(offset){
   return new Promise(function(res){
-    var req=https.request({hostname:'api.telegram.org',path:'/bot'+TG_TOKEN+'/getUpdates?offset='+offset+'&timeout=20&limit=10',method:'GET'},
+    var req=https.request({hostname:'api.telegram.org',path:'/bot'+TG_TOKEN+'/getUpdates?offset='+offset+'&timeout=15&limit=10',method:'GET',
+      agent:tgAgent,timeout:20000},
       function(r){var d='';r.on('data',function(c){d+=c;});r.on('end',function(){try{var j=JSON.parse(d);res(j.ok?j.result:[]);}catch(e){res([]);}});});
-    req.on('error',function(){res([]);});req.end();
+    req.on('error',function(){res([]);});
+    req.on('timeout',function(){try{req.destroy();}catch(_){}res([]);});
+    req.end();
   });
 }
 
@@ -224,34 +254,34 @@ function fmt(title,data){
 
 var busy=false;
 function handleCommand(cmd,chatId){
+  //_approval_patch_
+  //_ack_v2_ /대기목록 /처리시작 /취소 진입 즉시 ack (씹힘 vs 로딩 구분)
+  if(/^\/?(\uB300\uAE30\uBAA9\uB85D|\uCC98\uB9AC\uC2DC\uC791|\uCDE8\uC18C)(\s|$)/.test(cmd)){
+    var _ackCmd=cmd.split(/\s+/)[0];
+    tgSend('\u23F3 '+_ackCmd+' \uCC98\uB9AC \uC911...',chatId);
+  }
+  if(_approvalHandler.tryHandle(cmd,chatId)) return;
   //_price_patch3_
-  //_cmdlist_v3_
-  if(cmd==='명령어확인'||cmd==='명령어목록'||cmd==='/명령어리스트'||cmd==='명령어리스트') {
-    var _cmdMsg = '<b>명령어 목록</b>\n\n';
-    _cmdMsg += '📦 <b>주문 확인 (gotgan-status)</b>\n';
-    _cmdMsg += '/주문건확인  -  오늘 주문 내역\n';
-    _cmdMsg += '/주문출력  -  주문 출력\n';
-    _cmdMsg += '/승인상태  -  승인 현황\n\n';
-    _cmdMsg += '💰 <b>단가 변경 (어드민 단일상품)</b>\n';
-    _cmdMsg += '[상품명] [가격]원 변경\n';
-    _cmdMsg += '예) 새벽경매 단호박 1알 2700원 변경\n';
-    _cmdMsg += '예) 두릅 200g 7500원 변경\n\n';
-    _cmdMsg += '📈 <b>시세봇 (엄궁공판장 경락가)</b>\n';
-    _cmdMsg += '[품목명] 입력  -  경락가 조회\n';
-    _cmdMsg += '[품목명] 일주일  -  주간 시세\n';
-    _cmdMsg += '[품목명] 어제  -  어제 시세\n';
-    _cmdMsg += '/과일  /채소  /과채  /버섯  -  카테고리\n';
-    _cmdMsg += '/시황  -  전체 시황 즈직 받기\n\n';
-    _cmdMsg += '🔔 <b>추적 관리</b>\n';
-    _cmdMsg += '/추적목록  -  추적 품목 볼기\n';
-    _cmdMsg += '/추적추가 [품목명]  -  추적 추가\n';
-    _cmdMsg += '/추적삭제 [품목명]  -  추적 삭제\n\n';
-    _cmdMsg += '🔄 <b>전체 단가 일괄업데이트</b>\n';
-    _cmdMsg += '/단가업데이트  -  어드민 전체 상품 단가 일괄 갱신';
-    tgSend(_cmdMsg, chatId);
+  //_cmdlist_v2_
+  if(cmd==='명령어확인'||cmd==='명령어목록'||cmd==='/명령어리스트') {
+    tgSend(
+      '<b>명령어 목록</b>\n\n' +
+      '📦 <b>주문 확인</b>\n' +
+      '/주문건확인  -  오늘 주문 내역\n' +
+      '/주문출력  -  주문 출력\n' +
+      '/승인상태  -  승인 현황\n\n' +
+      '💰 <b>단가 변경 (어드민 단일상품)</b>\n' +
+      '[상품명] [가격]원 변경\n' +
+      '예) 새벽경매 단호박 1알 2700원 변경\n' +
+      '예) 두릅 200g 7500원 변경\n\n' +
+      '/명령어리스트  -  이 목록\n\n' +
+      '🛡️ <b>주문 사전승인 (gotgan-watcher v3)</b>\n' +
+      '/대기목록  -  대기 중인 주문 파일 보기\n' +
+      '/처리시작 [ID?]  -  대기 파일 처리 (ID 생략 시 최근 1건)\n' +
+      '/취소 [ID?]  -  대기 파일 취소 (ID 생략 시 최근 1건)',
+      chatId);
     return;
   }
-
 
   var _hc=/변경|수정|바꾸|단가변경/.test(cmd);
   if(_hc){
@@ -267,10 +297,10 @@ function handleCommand(cmd,chatId){
 
   log('cmd: '+cmd);
   if(cmd==='/'+'\uBA85\uB839\uC5B4\uD655\uC778'||cmd==='\uBA85\uB839\uC5B4\uD655\uC778'){tgSend('\uD83D\uDCCB \uBA85\uB839\uC5B4 \uC548\uB0B4\n\n\u2501 \uC8FC\uBB38\uD604\uD669\uBD07 \u2501\n/\uC8FC\uBB38\uAC74\uD655\uC778  \u2192 \uC5B4\uB4DC\uBBFC+\uACF3\uAC04 \uD1B5\uD569 \uC8FC\uBB38\uD604\uD669\n/\uC8FC\uBB38\uCD9C\uB825   \u2192 \uACF3\uAC04 \uBC30\uC1A1\uC900\uBE44 \uC5D1\uC140\n/\uC2B9\uC778\uC0C1\uD0DC   \u2192 \uC790\uB3D9\uC2B9\uC778 \uBD07 \uC0C1\uD0DC\n\n\u2501 \uC2DC\uC138\uBD07 \u2501\n\uD488\uBAA9\uBA85 \uC2DC\uC138     \u2192 \uC2DC\uC138 \uC870\uD68C (\uC608: \uAE68\uC78E \uC2DC\uC138)\n\uD488\uBAA9\uBA85 \uC8FC\uAC04     \u2192 7\uC77C \uC8FC\uAC04 \uC2DC\uC138\n\uD488\uBAA9\uBA85 \uC5B4\uC81C \uC2DC\uC138 \u2192 \uC5B4\uC81C \uC2DC\uC138\n\n/\uACFC\uC77C\uB958  /\uCC44\uC18C\uB958  /\uBC84\uC12F\uB958  /\uD2B9\uC6A9\uC791\uBB3C\n\u2192 \uCE74\uD14C\uACE0\uB9AC\uBCC4 \uC2DC\uC138\n\n/\uC2DC\uD669       \u2192 \uC624\uB298 \uC804\uCCB4 \uC2DC\uD669\n/\uCD94\uC801\uBAA9\uB85D    \u2192 \uCD94\uC801 \uD488\uBAA9 \uBAA9\uB85D\n/\uCD94\uC801\uCD94\uAC00 \uD488\uBAA9\uBA85 \u2192 \uCD94\uC801 \uCD94\uAC00\n/\uCD94\uC801\uC81C\uAC70 \uD488\uBAA9\uBA85 \u2192 \uCD94\uC801 \uC81C\uAC70\n/\uB3C4\uC6C0\uB9D0      \u2192 \uC2DC\uC138\uBD07 \uB3C4\uC6C0\uB9D0',chatId);return;}
-  if(cmd==='/'+'\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8'||cmd==='\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8'){tgSend('[\uB3D9\uB124곳간] /\uC8FC\uBB38\uAC74\uD655\uC778 /\uC8FC\uBB38\uCD9C\uB825 /\uC2B9\uC778\uC0C1\uD0DC /\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8',chatId);return;}
+  if(cmd==='/'+'\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8'||cmd==='\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8'){tgSend('[\uB3D9\uB124\uACF3\uAC04] /\uC8FC\uBB38\uAC74\uD655\uC778 /\uC8FC\uBB38\uCD9C\uB825 /\uC2B9\uC778\uC0C1\uD0DC /\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8',chatId);return;}
   if(cmd==='/'+'\uC2B9\uC778\uC0C1\uD0DC'||cmd==='\uC2B9\uC778\uC0C1\uD0DC'){tgSend('gotgan-approve: 30\uCD08\uB9C8\uB2E4 \uC790\uB3D9\uC2B9\uC778 \uC2E4\uD589 \uC911',chatId);return;}
   if(cmd==='/'+'\uC8FC\uBB38\uCD9C\uB825'||cmd==='\uC8FC\uBB38\uCD9C\uB825'){
-    tgSend('곳간 \uC5D1\uC140 \uCD9C\uB825 \uC2DC\uC791...',chatId);
+    tgSend('\uACF3\uAC04 \uC5D1\uC140 \uCD9C\uB825 \uC2DC\uC791...',chatId);
     (async function(){
       var dlBr=null;try{
         var os2=require('os'),DLPATH=require('path').join(os2.homedir(),'Downloads');
@@ -284,7 +314,7 @@ function handleCommand(cmd,chatId){
         var ie=await dlPage.$('input[name="userId"]'),pe=await dlPage.$('input[name="password"]');
         if(ie){await ie.click({clickCount:3});await ie.type(FG_ID);}if(pe){await pe.click({clickCount:3});await pe.type(FG_PW);}
         await sleep(500);await Promise.all([dlPage.waitForNavigation({waitUntil:'networkidle2',timeout:15000}).catch(function(){}),pe?pe.press('Enter'):Promise.resolve()]);await sleep(2000);
-        if(!dlPage.url().includes('dongnaegotgan.flexgate.co.kr')){await dlBr.close();await tgSend('곳간 \uB85C\uADF8\uC778 \uC2E4\uD328',chatId);return;}
+        if(!dlPage.url().includes('dongnaegotgan.flexgate.co.kr')){await dlBr.close();await tgSend('\uACF3\uAC04 \uB85C\uADF8\uC778 \uC2E4\uD328',chatId);return;}
         await dlPage.goto(FB+'/NewOrder/deal01?order_status=30&formtype=A&pagesize=1000',{waitUntil:'networkidle2',timeout:30000});await sleep(2000);
         await dlPage.waitForFunction(function(){return document.querySelectorAll('input[name="chk"]').length>0;},{timeout:15000,polling:500}).catch(function(){});
         var cnt=await dlPage.evaluate(function(){return document.querySelectorAll('input[name="chk"]').length;});
@@ -302,16 +332,16 @@ function handleCommand(cmd,chatId){
   if(cmd==='/'+'\uC8FC\uBB38\uAC74\uD655\uC778'||cmd==='\uC8FC\uBB38\uAC74\uD655\uC778'){
     if(busy){tgSend('\uC870\uD68C \uC911...',chatId);return;}busy=true;
     var now=new Date().toLocaleString('ko-KR',{timeZone:'Asia/Seoul'});
-    tgSendId('[\uC8FC\uBB38\uD604\uD669 \uC870\uD68C \uC911...]\n곳간 위탁도매 조회 중\n\uB3D9\uB124곳간 \uC870\uD68C \uC911\n\uC7A0\uC2DC\uB9CC \uAE30\uB2E4\uB824 \uC8FC\uC138\uC694',chatId).then(function(mid){
+    tgSendId('[\uC8FC\uBB38\uD604\uD669 \uC870\uD68C \uC911...]\n\uACF3\uAC04 \uC704\uD0C1\uB3C4\uB9E4 \uC870\uD68C \uC911\n\uB3D9\uB124\uACF3\uAC04 \uC870\uD68C \uC911\n\uC7A0\uC2DC\uB9CC \uAE30\uB2E4\uB824 \uC8FC\uC138\uC694',chatId).then(function(mid){
       Promise.allSettled([getAdminOrders(),getGotganOrders()]).then(function(results){
         var aD=results[0].status==='fulfilled'?results[0].value:null;
         var fD=results[1].status==='fulfilled'?results[1].value:null;
         var msg='<b>[\uC8FC\uBB38\uD604\uD669]</b>  '+now+'\n'+'\u2500'.repeat(18)+'\n\n';
-        msg+=aD?fmt('<b>[곳간 위탁도매]</b>',aD):'곳간 위탁도매 조회 실패\n';
+        msg+=aD?fmt('<b>[\uACF3\uAC04 \uC704\uD0C1\uB3C4\uB9E4]</b>',aD):'\uACF3\uAC04 \uC704\uD0C1\uB3C4\uB9E4 \uC870\uD68C \uC2E4\uD328\n';
         msg+='\n';
-        msg+=fD?fmt('<b>[동네곳간]</b>',fD):'동네곳간 조회 실패\n';
+        msg+=fD?fmt('<b>[\uB3D9\uB124\uACF3\uAC04]</b>',fD):'\uB3D9\uB124\uACF3\uAC04 \uC870\uD68C \uC2E4\uD328\n';
         var at=(aD&&aD.totalAmount)?aD.totalAmount:0,ft=(fD&&fD.totalAmount)?fD.totalAmount:0;
-        if(at+ft>0){msg+='\n'+'\u2500'.repeat(18)+'\n<b>[\uD569\uC0B0 \uCD1D\uC561: '+(at+ft).toLocaleString()+'\uC6D0]</b>\n';if(at>0)msg+='  곳간 위탁도매: '+at.toLocaleString()+'\uC6D0\n';if(ft>0)msg+='  동네곳간: '+ft.toLocaleString()+'\uC6D0\n';}
+        if(at+ft>0){msg+='\n'+'\u2500'.repeat(18)+'\n<b>[\uD569\uC0B0 \uCD1D\uC561: '+(at+ft).toLocaleString()+'\uC6D0]</b>\n';if(at>0)msg+='  \uACF3\uAC04 \uC704\uD0C1\uB3C4\uB9E4: '+at.toLocaleString()+'\uC6D0\n';if(ft>0)msg+='  \uB3D9\uB124\uACF3\uAC04: '+ft.toLocaleString()+'\uC6D0\n';}
         return mid?tgEdit(chatId,mid,msg):tgSend(msg,chatId);
       }).then(function(){log('send ok');busy=false;}).catch(function(e){log('err:'+e.message);tgSend('\uC624\uB958: '+e.message,chatId);busy=false;});
     });return;
@@ -329,7 +359,7 @@ function poll(){
       var rawText=msg2.text.trim(),text=rawText.split(' ')[0],chatId=String(msg2.chat.id);
       if(chatId!==TG_CHAT) return;
       log('recv: "'+rawText+'"');
-      if(CMDS.indexOf(text)>=0) handleCommand(text,chatId); else if(/변경|수정|바꾸|단가변경/.test(rawText)) handleCommand(rawText,chatId);
+      if(CMDS.indexOf(text)>=0) handleCommand(text,chatId); else if(/변경|수정|바꾸|단가변경/.test(rawText)) handleCommand(rawText,chatId); else if(/^\/?(처리시작|취소|대기목록)(\s|$)/.test(rawText)) handleCommand(rawText,chatId);
     });
   }).catch(function(e){log('poll:'+e.message);}).then(function(){polling=false;});
 }
