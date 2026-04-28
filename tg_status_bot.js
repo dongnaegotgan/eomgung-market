@@ -254,6 +254,31 @@ function fmt(title,data){
 
 var busy=false;
 function handleCommand(cmd,chatId){
+  // _order_cmds_v1_
+  // _shipping_cmd_v1_
+  if(cmd==='/송장출력'||cmd==='송장출력'){
+    tgSend('🚚 송장출력 시작 중...\n잠시 기다려 주세요 (약 2분 소요)', chatId);
+    const shippingProc = require('child_process').spawn(
+      process.execPath,
+      ['gotgan-shipping.js'],
+      { detached: true, stdio: ['ignore','pipe','pipe'], cwd: __dirname }
+    );
+    let output = '';
+    shippingProc.stdout.on('data', d => { output += d.toString(); });
+    shippingProc.stderr.on('data', d => { output += d.toString(); });
+    shippingProc.on('close', code => {
+      const lines = output.split('\n').filter(l => l.includes('✅')||l.includes('❌')||l.includes('🎉')||l.includes('건'));
+      const summary = lines.slice(-5).join('\n') || '완료';
+      tgSend(code === 0 ? '✅ 송장출력 완료\n' + summary : '❌ 송장출력 실패\n' + summary, chatId);
+    });
+    shippingProc.unref();
+    return;
+  }
+  if(cmd==='/발주서'||cmd.startsWith('/발주서 ')){const sup=cmd.replace('/발주서','').trim();const a=sup?['--cmd=발주서','--sup='+sup]:['--cmd=발주서'];require('child_process').spawn(process.execPath,['gotgan-order.js',...a],{detached:true,stdio:'ignore',cwd:__dirname}).unref();return;}
+  if(cmd==='/재고현황'){require('child_process').spawn(process.execPath,['gotgan-order.js','--cmd=재고현황'],{detached:true,stdio:'ignore',cwd:__dirname}).unref();return;}
+  if(cmd==='/입고완료'){require('child_process').spawn(process.execPath,['gotgan-order.js','--cmd=입고완료'],{detached:true,stdio:'ignore',cwd:__dirname}).unref();return;}
+  if(cmd.startsWith('/재고수정 ')){const pts=cmd.replace('/재고수정 ','').trim().split(' ');const qty=pts[pts.length-1].replace(/[^0-9.]/g,'');const item=pts.slice(0,-1).join(' ');require('child_process').spawn(process.execPath,['gotgan-order.js','--cmd=재고수정','--item='+item,'--qty='+qty],{detached:true,stdio:'ignore',cwd:__dirname}).unref();return;}
+
   //_approval_patch_
   //_ack_v2_ /대기목록 /처리시작 /취소 진입 즉시 ack (씹힘 vs 로딩 구분)
   if(/^\/?(\uB300\uAE30\uBAA9\uB85D|\uCC98\uB9AC\uC2DC\uC791|\uCDE8\uC18C)(\s|$)/.test(cmd)){
@@ -266,6 +291,8 @@ function handleCommand(cmd,chatId){
   if(cmd==='명령어확인'||cmd==='명령어목록'||cmd==='/명령어리스트') {
     tgSend(
       '<b>명령어 목록</b>\n\n' +
+      '🖨️ <b>송장출력</b>\n' +
+      '/송장출력  -  송장출력 전체 자동화 (어드민→iLOGEN→업로드)\n\n' +
       '📦 <b>주문 확인</b>\n' +
       '/주문건확인  -  오늘 주문 내역\n' +
       '/주문출력  -  주문 출력\n' +
@@ -275,6 +302,12 @@ function handleCommand(cmd,chatId){
       '예) 새벽경매 단호박 1알 2700원 변경\n' +
       '예) 두릅 200g 7500원 변경\n\n' +
       '/명령어리스트  -  이 목록\n\n' +
+      '📦 <b>재고 & 발주</b>\n' +
+      '/재고현황  -  현재 재고 + 부족 품목 확인\n' +
+      '/발주서  -  전체 거래체 발주서 생성\n' +
+      '/발주서 [거래체]  -  특정 거래체만 (예: /발주서 버섯)\n' +
+      '/입고완료  -  발주 내역 입고 처리\n' +
+      '/재고수정 [품목] [수량]  -  수동 재고 조정 (예: /재고수정 단호박 12)\n\n' +
       '🛡️ <b>주문 사전승인 (gotgan-watcher v3)</b>\n' +
       '/대기목록  -  대기 중인 주문 파일 보기\n' +
       '/처리시작 [ID?]  -  대기 파일 처리 (ID 생략 시 최근 1건)\n' +
@@ -349,7 +382,7 @@ function handleCommand(cmd,chatId){
 }
 
 var lastUpdateId=0,polling=false;
-var CMDS=['/\uC8FC\uBB38\uAC74\uD655\uC778','\uC8FC\uBB38\uAC74\uD655\uC778','/\uC8FC\uBB38\uCD9C\uB825','\uC8FC\uBB38\uCD9C\uB825','/\uC2B9\uC778\uC0C1\uD0DC','\uC2B9\uC778\uC0C1\uD0DC','/\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8','\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8','/\uBA85\uB839\uC5B4\uD655\uC778','\uBA85\uB839\uC5B4\uD655\uC778'];
+var CMDS=['/\uC1A1\uC7A5\uCD9C\uB825','\uC1A1\uC7A5\uCD9C\uB825','/\uC8FC\uBB38\uAC74\uD655\uC778','\uC8FC\uBB38\uAC74\uD655\uC778','/\uC8FC\uBB38\uCD9C\uB825','\uC8FC\uBB38\uCD9C\uB825','/\uC2B9\uC778\uC0C1\uD0DC','\uC2B9\uC778\uC0C1\uD0DC','/\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8','\uBA85\uB839\uC5B4\uB9AC\uC2A4\uD2B8','/\uBA85\uB839\uC5B4\uD655\uC778','\uBA85\uB839\uC5B4\uD655\uC778','/재고현황','재고현황','/발주서','발주서','/입고완료','입고완료','/재고수정','재고수정','/재고현황','재고현황','/발주서','발주서','/입고완료','입고완료','/재고수정','재고수정'];
 function poll(){
   if(polling) return;polling=true;
   tgGetUpdates(lastUpdateId).then(function(updates){
@@ -359,7 +392,7 @@ function poll(){
       var rawText=msg2.text.trim(),text=rawText.split(' ')[0],chatId=String(msg2.chat.id);
       if(chatId!==TG_CHAT) return;
       log('recv: "'+rawText+'"');
-      if(CMDS.indexOf(text)>=0) handleCommand(text,chatId); else if(/변경|수정|바꾸|단가변경/.test(rawText)) handleCommand(rawText,chatId); else if(/^\/?(처리시작|취소|대기목록)(\s|$)/.test(rawText)) handleCommand(rawText,chatId);
+      if(CMDS.indexOf(text)>=0) handleCommand(text,chatId); else if(text==='/송장출력'||text==='송장출력') handleCommand(text,chatId); else if(/^\/재고|\/발주|\/입고/.test(text)) handleCommand(text,chatId); else if(/^\/재고|\/발주|\/입고/.test(text)) handleCommand(text,chatId); else if(/^\/재고|\/발주|\/입고/.test(text)) handleCommand(text,chatId); else if(/^\/재고|\/발주|\/입고/.test(text)) handleCommand(text,chatId); else if(/변경|수정|바꾸|단가변경/.test(rawText)) handleCommand(rawText,chatId); else if(/^\/?(처리시작|취소|대기목록)(\s|$)/.test(rawText)) handleCommand(rawText,chatId);
     });
   }).catch(function(e){log('poll:'+e.message);}).then(function(){polling=false;});
 }
