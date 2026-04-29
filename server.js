@@ -335,6 +335,17 @@ function scheduleAutoRefresh() {
   }, next - kst);
 }
 
+
+// _auction_refresh_endpoint_v1_ - 캐시 강제 갱신 (스케줄러 → 봇 연동)
+app.post('/admin/refresh-cache', (req, res) => {
+  const kst = new Date(Date.now() + 9*3600*1000);
+  const today = kst.toISOString().slice(0, 10);
+  dataCache.delete(today);
+  loadDayData(today)
+    .then(items => console.log(`[캐시 갱신] ${today} → ${items.length}건`))
+    .catch(() => {});
+  res.json({ ok: true, date: today });
+});
 app.listen(PORT, () => {
   console.log(`\n🚜 엄궁 경락가 서버 기동: http://localhost:${PORT}`);
   console.log(`   API: aT 전국 공영도매시장 실시간 경매정보 (15141808)`);
@@ -378,33 +389,77 @@ async function sendTelegram(text) {
 const dataCache = new Map(); // key: YYYY-MM-DD, value: [{...}]
 
 async function loadDayData(date) {
+  // _loadDayData_agromarket_v1_ - at.agromarket.kr HTML 파싱 방식 (2026-04-28)
   if (dataCache.has(date)) return dataCache.get(date);
 
-  const { URLSearchParams } = require('url');
+  const https = require('https');
   const all = [];
   let page = 1;
+  const PAGE_SIZE = 1000;
+
   while (true) {
-    const params = new URLSearchParams({
-      serviceKey: SERVICE_KEY, pageNo: String(page), numOfRows: '1000',
-      returnType: 'json',
-      'cond[trd_clcln_ymd::EQ]': date,
-      'cond[whsl_mrkt_cd::EQ]': '210001',
-      'cond[corp_cd::EQ]': '21000101',
+    const qs = [
+      'pageNo=' + page,
+      'saledateBefore=' + date,
+      'largeCdBefore=', 'midCdBefore=', 'smallCdBefore=',
+      'saledate=' + date,
+      'whsalCd=210001',
+      'cmpCd=21000101',
+      'mmCd=', 'largeCd=', 'midCd=', 'smallCd=', 'sanCd=', 'smallCdSearch=',
+      'pageSize=' + PAGE_SIZE,
+      'dCostSort='
+    ].join('&');
+
+    const rows = await new Promise((resolve) => {
+      const req = https.get({
+        hostname: 'at.agromarket.kr',
+        path: '/domeinfo/sanRealtime.do?' + qs,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html',
+          'Accept-Language': 'ko-KR,ko;q=0.9',
+          'Referer': 'https://at.agromarket.kr/domeinfo/sanRealtime.do'
+        }
+      }, (res) => {
+        let d = '';
+        res.on('data', x => d += x);
+        res.on('end', () => {
+          const result = [];
+          const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+          let m;
+          while ((m = trRe.exec(d)) !== null) {
+            const tds = m[1].match(/<td[^>]*>([\s\S]*?)<\/td>/gi);
+            if (!tds || tds.length < 12) continue;
+            const cells = tds.map(t => t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim());
+            // cells[1] = 시간 문자열 (데이터 행 판별)
+            if (!cells[1] || cells[1].length < 5) continue;
+            const qty = Number(cells[10]) || 0;
+            const prc = Number((cells[11] || '').replace(/,/g, '')) || 0;
+            if (qty > 0 && prc > 0) {
+              result.push({
+                corp_gds_item_nm: cells[6],  // 품목명
+                corp_gds_vrty_nm: cells[7],  // 품종명
+                qty:       qty,               // 수량
+                scsbd_prc: prc                // 경락가
+              });
+            }
+          }
+          resolve(result);
+        });
+      });
+      req.on('error', () => resolve([]));
+      req.setTimeout(15000, () => { req.destroy(); resolve([]); });
     });
-    try {
-      const res = await fetch(`http://apis.data.go.kr/B552845/katRealTime2/trades2?${params}`);
-      const body = await res.json();
-      const total = body?.response?.body?.totalCount || 0;
-      const items = body?.response?.body?.items?.item || [];
-      const lst = Array.isArray(items) ? items : (items ? [items] : []);
-      all.push(...lst.filter(it => Number(it.qty) > 0 && Number(it.scsbd_prc) > 0));
-      if (all.length >= total || lst.length === 0) break;
-      page++;
-      await new Promise(r => setTimeout(r, 200));
-    } catch(e) { break; }
+
+    all.push(...rows);
+    // 마지막 페이지 판별: 받은 행 수 < pageSize
+    if (rows.length < PAGE_SIZE) break;
+    page++;
+    await new Promise(r => setTimeout(r, 300));
   }
-  if (all.length > 0) dataCache.set(date, all); // 0건이면 캐시 저장 안 함 (나중에 데이터 올라오면 재조회)
-  console.log(`📦 캐시 로드: ${date} → ${all.length}건`);
+
+  dataCache.set(date, all); // 0건도 캐시 저장 (반복 HTTP 요청 방지)
+  console.log(`📦 캐시 로드: ${date} → ${all.length}건 (at.agromarket)`);
   return all;
 }
 
@@ -503,7 +558,7 @@ async function handleCommand(text, chatId) {
     '시세','경매','경락','단가','가격','알려줘','알려주세요','얼마야','얼마에요',
     '어때요','조회해줘','확인해줘','오늘','어제','금일','전날','전일','보여줘','봐',
     '최근','일주일','7일','주간','weekly','한주','이번주','줘요','이야','인가요',
-    '인가','줘','요','야','좀','제발',
+    '인가','줘','요','야','좀','제발','오늘시세','어제시세','주간시세','일주일시세','오늘경락','어제경락','현재시세','오늘시세','어제시세','주간시세','일주일시세','오늘경락','어제경락','현재시세',
   ]);
   let searchWord = raw.replace('/','').trim()
     .split(/\s+/)
@@ -770,10 +825,28 @@ async function pollTelegram() {
 
       const chatId = String(msg.chat.id);
       console.log(`📱 텔레그램 수신 [${msg.from?.first_name}]: ${msg.text}`);
-      const reply = await handleCommand(msg.text, chatId);
-      if (reply) {
-        await sendTelegramTo(chatId, reply);
-      }
+      if(isPriceQuery||isWeeklyQuery||isCategoryCmd){sendTelegramTo(chatId,"🔍 "+msg.text.replace(/오늘|시세|시황|일주일|7일|주간|weekly/g,"").trim()+" 조회 중...").catch(()=>{});}
+      (async()=>{
+        const TIMEOUT_MS=30000;
+        let timer;
+        const timeoutPromise=new Promise(r=>{timer=setTimeout(()=>r({__TIMEOUT__:true}),TIMEOUT_MS);});
+        try{
+          const result=await Promise.race([handleCommand(msg.text,chatId),timeoutPromise]);
+          clearTimeout(timer);
+          if(result&&result.__TIMEOUT__){
+            console.error("[poll] handleCommand 30s timeout:",msg.text);
+            await sendTelegramTo(chatId,"⚠️ 응답 시간 초과 (30초). 잠시 후 다시 시도해주세요.").catch(()=>{});
+          }else if(result){
+            const ok=await sendTelegramTo(chatId,result);
+            if(!ok)console.error("[poll] sendTelegramTo failed for:",msg.text);
+          }else{
+            console.log("[poll] no reply for:",msg.text);
+          }
+        }catch(e){clearTimeout(timer);console.error("[poll]",e.message);}
+      })().catch(e=>console.error("[poll-outer]",e.message));
+
+
+
     }
   } catch(e) {
     // timeout/abort/network 모두 무시 — 다음 cycle 재시도
@@ -784,27 +857,46 @@ async function pollTelegram() {
 }
 
 async function sendTelegramTo(chatId, text) {
-  return new Promise((resolve) => {
+  // _sendtg_v4_robust_ - 에러 로깅 + statusCode 체크 + 자동 retry 1회
+  const attempt = (retryNum) => new Promise((resolve) => {
     const body = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' });
     const req = https.request({
       hostname: 'api.telegram.org',
       path: `/bot${TG_TOKEN}/sendMessage`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      timeout: 15000 // _server_polling_robust_v1_ - hang 방지
+      timeout: 15000
     }, (res) => {
       let data = '';
       res.on('data', d => data += d);
-      res.on('end', () => resolve(true));
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(true);
+        } else {
+          console.error('[tg] HTTP ' + res.statusCode + ' retry=' + retryNum + ' body:', data.slice(0, 250));
+          resolve(false);
+        }
+      });
     });
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { try { req.destroy(); } catch (_) {} resolve(false); });
+    req.on('error', err => {
+      console.error('[tg] error retry=' + retryNum + ':', err.code || err.message);
+      resolve(false);
+    });
+    req.on('timeout', () => {
+      console.error('[tg] timeout 15s retry=' + retryNum);
+      try { req.destroy(); } catch (_) {}
+      resolve(false);
+    });
     req.write(body);
     req.end();
   });
+  const ok = await attempt(0);
+  if (ok) return true;
+  await new Promise(r => setTimeout(r, 2000));
+  return await attempt(1);
 }
 
 if (TG_TOKEN) {
-  setInterval(pollTelegram, 3000); // 3초마다 체크
+  (function loop(){pollTelegram().catch(()=>{}).then(()=>setTimeout(loop,200));})(); // 3초마다 체크
   console.log(`\n📱 텔레그램 봇 시작: @Gotgani_bot`);
 }
