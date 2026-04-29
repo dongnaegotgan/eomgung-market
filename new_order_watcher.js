@@ -168,7 +168,7 @@ async function getFgCount() {
     const count = await fgPage.evaluate(() => {
       // 로그인 페이지로 빠진 경우 감지
       if (location.href.includes('login') || location.href.includes('Login')) return -1;
-      const ids = new Set((document.documentElement.innerHTML.match(/PJM\d+/g) || []));
+      const ids = new Set(Array.from(document.querySelectorAll('tr[data-orderno]')).map(tr=>tr.getAttribute('data-orderno')));
       return ids.size;
     });
 
@@ -257,7 +257,7 @@ async function runOrderCheck() {
           { waitUntil: 'networkidle2', timeout: 20000 }
         );
         const data = await page.evaluate(() => {
-          const ids = new Set((document.documentElement.innerHTML.match(/PJM\d+/g) || []));
+          const ids = new Set(Array.from(document.querySelectorAll('tr[data-orderno]')).map(tr=>tr.getAttribute('data-orderno')));
           const text = document.body.innerText;
           const priceM = text.match(/합계금액[^0-9]*([0-9,]+)/);
           const total = priceM ? parseInt(priceM[1].replace(/,/g, '')) : 0;
