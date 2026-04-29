@@ -436,11 +436,26 @@ async function loadDayData(date) {
             const qty = Number(cells[10]) || 0;
             const prc = Number((cells[11] || '').replace(/,/g, '')) || 0;
             if (qty > 0 && prc > 0) {
+              // _spec_v2_ 2026-04-29 - cells[8] 산지, cells[9] 규격 ("11kg 상자") 파싱
+              const specRaw = (cells[9] || '').trim();
+              let unit_qty = 0, unit_nm = '', pkg_nm = '';
+              const _m = specRaw.match(/^([\d.]+)\s*([^\s\d]+)\s*(.*)$/);
+              if (_m) {
+                unit_qty = parseFloat(_m[1]) || 0;
+                unit_nm  = _m[2] || '';
+                pkg_nm   = (_m[3] || '').trim();
+              } else {
+                pkg_nm = specRaw;
+              }
               result.push({
-                corp_gds_item_nm: cells[6],  // 품목명
-                corp_gds_vrty_nm: cells[7],  // 품종명
-                qty:       qty,               // 수량
-                scsbd_prc: prc                // 경락가
+                corp_gds_item_nm: cells[6],
+                corp_gds_vrty_nm: cells[7],
+                origin:    cells[8] || '',
+                unit_qty:  unit_qty,
+                unit_nm:   unit_nm,
+                pkg_nm:    pkg_nm,
+                qty:       qty,
+                scsbd_prc: prc
               });
             }
           }
